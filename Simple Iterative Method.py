@@ -121,18 +121,108 @@ def MainMethod(S0,K,r,sig,T,k,n):
     Price = BSPut(S0,K,r,sig,T) + sci.fixed_quad(lambda x: r*K*np.exp(-r*(T-x))*NCDF(-d12(S0,T-x,Polyf(params,x))[1]),0,T)[0]
     return Price
 
+def Phi(S,T,Gamma,H,X):
+    """
+    Phi function in BS1993 formula
+    """
     
+    Lambda = -r + b*Gamma + 0.5*Gamma*(Gamma-1)*sig**2
+    Kappa = 2*b/sig**2 + (2*Gamma - 1)
+    d = - (np.log(S/H)+(b+(Gamma-0.5)*sig**2)*T)/(sig*np.sqrt(T))
+    """
+    V1 = np.exp(Lambda*T)*S**Gamma
+    V2 = NCDF(-(np.log(S/H)+(b+(Gamma-0.5)*sig**2)*T)/sig/np.sqrt(T))
+    V3 = -(X/S)**Kappa*NCDF(-(np.log((X**2)/(S*H))+(b+(Gamma-0.5)*sig**2)*T)/sig/np.sqrt(T))
+    """
+    V = np.exp(Lambda*T)*S**Gamma*(NCDF(d) - (X/S)**Kappa*NCDF(d-2*np.log(X/S)/sig/np.sqrt(T)))
+    return V
+    
+    
+def BS1993Call(S,K,r,sig,T,b):
+    """
+    Close-form solution of American Option using Bjerksund & Stensland 1993 Formula
+    """
+    
+    Beta = (0.5 - b/sig**2)+ np.sqrt((b/sig**2-0.5)**2+2*r/sig**2)
+    B_inf = Beta/(Beta-1)*K
+    B_0 = max(K,r/(r-b)*K)
+    h = - (b*T + 2*sig*np.sqrt(T))*(B_0/(B_inf-B_0))
+    X = B_0+(B_inf-B_0)*(1-np.exp(h))
+    Alpha = (X-K)*X**(-Beta)
+    
+    #Main formula for American Call
+    C = Alpha*S**Beta - Alpha*Phi(S,T,Beta,X,X) + Phi(S,T,1,X,X) - Phi (S,T,1,K,X) -\
+    K*Phi(S,T,0,X,X) + K*Phi(S,T,0,K,X)
+    return C
+    
+def QuadAppPut(S,K,r,sig,T,b):
+    """
+    Closed-form solution of American Option using Quadratic Approximation as in BW 1987
+    """
+    M = 2*r/sig**2
+    N = 2*b/sig**2
+    q1 = (-(N-1) - np.sqrt((N-1)**2 + 4*M/K))/2
+    q2 = (-(N-1) + np.sqrt((N-1)**2 + 4*M/K))/2
+    
+    #S_Crit Calculation
+    Err = 1
+    count = 0
+    S_Crit = K
+    
+    while (Err > 0.001) or (count<100):
+        d1 = (np.log(S_Crit/K) + (b + 0.5*sig**2)*T)/sig/np.sqrt(T)
+        a = (b-r)*T
+        bi = np.exp(a)*NCDF(-d1)*(-1 + 1/q1) + (-1 - np.exp(a)*norm.pdf(NCDF(-d1))/sig/np.sqrt(T))/q1
+        LHS = K - S_Crit
+        RHS = BSPut(S_Crit,K,r,sig,T) - (1 - np.exp(a)*NCDF(-d1))*S_Crit/q1
+        S_Crit = (K - RHS + bi*S_Crit)/(bi+1)
+        Err = LHS - RHS
+        count+=1
+    
+    """ TESTING Algo to find critical S
+    while (Err > 0.01) or (count<100):
+        d1 = (np.log(S_Crit/K) + (b + 0.5*sig**2)*T)/sig/np.sqrt(T)
+        a = (b-r)*T
+        RHS = BSPut(S_Crit,K,r,sig,T) - (1 - np.exp(a)*NCDF(-d1))*S_Crit/q1
+        Err = K - S_Crit - RHS
+        S_Crit = K - RHS
+        count+=1
+    """   
+        
+        
+    d1 = (np.log(S_Crit/K) + (b + 0.5*sig**2)*T)/sig/np.sqrt(T)    
+    A1 = -(S_Crit/q1)*(1 - np.exp(a)*NCDF(-d1))
+    
+    if (S > S_Crit):
+        Price = BSPut(S,K,r,sig,T) + A1*(S/S_Crit)**q1
+    else:
+        Price = K - S
+        
+    return Price
+
+
 """                           Main Program                      """
 S=45
 sig=0.2
 r=0.05
 T=0.5
-N=1000
+N=100
 K=45
-k=5
-n=16
 
+#Binomial Method
 print(CRRPut(S,K,r,sig,T,N))
+
+#Main Iterative Method
+k=100
+n=16
 print(MainMethod(S,K,r,sig,T,k,n))
+
+#Bjerksund & Stenland 1993 Method
+b=r
+print (BS1993Call(K,S,r-b,sig,T,-b))
+
+#Quadratic Approximation 1987
+print (QuadAppPut(S,K,r,sig,T,b))
+
             
 
